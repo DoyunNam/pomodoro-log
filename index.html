@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Pomodoro Timer</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        text-align: center;
+        margin-top: 40px;
+        background: #fff;
+        color: #222;
+      }
+      .time-input {
+        margin: 10px;
+      }
+      input[type="text"] {
+        width: 120px;
+        padding: 6px;
+        font-size: 18px;
+        text-align: center;
+      }
+      button {
+        margin: 10px 5px;
+        padding: 10px 20px;
+        font-size: 16px;
+      }
+      #timer {
+        font-size: 48px;
+        margin-top: 30px;
+      }
+      #count {
+        margin-top: 20px;
+        font-size: 20px;
+      }
+      #log {
+        margin-top: 30px;
+        text-align: left;
+        width: 300px;
+        margin-left: auto;
+        margin-right: auto;
+        background: #f4f4f4;
+        padding: 10px;
+        border-radius: 8px;
+      }
+      .log-entry {
+        margin-bottom: 5px;
+      }
+      #taskInput {
+        width: 80%;
+        padding: 6px;
+        font-size: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Pomodoro Timer</h1>
+
+    <div>
+      <div class="time-input">
+        <strong>Work Time</strong><br />
+        <input
+          type="text"
+          id="workTimeText"
+          value="00:25:00"
+          placeholder="hh:mm:ss"
+        />
+      </div>
+      <div class="time-input">
+        <strong>Rest Time</strong><br />
+        <input
+          type="text"
+          id="restTimeText"
+          value="00:05:00"
+          placeholder="hh:mm:ss"
+        />
+      </div>
+      <br />
+      <button onclick="startTimer()">Start</button>
+      <button onclick="togglePause()" id="pauseBtn" disabled>Pause</button>
+      <button onclick="handleFullStop()" id="stopBtn" disabled>Stop</button>
+    </div>
+
+    <div id="timer">00:00:00</div>
+    <div id="count">Count: 0</div>
+    <div id="controls"></div>
+
+    <div id="log"><strong>⏱️ 로그</strong><br /></div>
+
+    <audio id="alertSound" src="arpeggio-467.mp3" preload="auto"></audio>
+
+    <script>
+      let workDuration = 0,
+        restDuration = 0,
+        remaining = 0;
+      let timer = null,
+        isWorking = true,
+        isPaused = false,
+        count = 0;
+
+      function parseTimeToSeconds(text) {
+        const parts = text.split(":").map((part) => parseInt(part, 10));
+        if (parts.length === 3)
+          return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        if (parts.length === 2) return parts[0] * 60 + parts[1];
+        if (parts.length === 1) return parts[0];
+        return 0;
+      }
+
+      function formatTime(seconds) {
+        const h = String(Math.floor(seconds / 3600)).padStart(2, "0");
+        const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+        const s = String(seconds % 60).padStart(2, "0");
+        return `${h}:${m}:${s}`;
+      }
+
+      function startTimer() {
+        workDuration = parseTimeToSeconds(
+          document.getElementById("workTimeText").value
+        );
+        restDuration = parseTimeToSeconds(
+          document.getElementById("restTimeText").value
+        );
+        isWorking = true;
+        isPaused = false;
+        remaining = workDuration;
+        document.getElementById("pauseBtn").disabled = false;
+        document.getElementById("stopBtn").disabled = false;
+        document.getElementById("pauseBtn").textContent = "Pause";
+        document.getElementById("controls").innerHTML = "";
+        addLog("Work 시작");
+
+        const audio = document.getElementById("alertSound");
+        audio.volume = 0.01;
+        audio
+          .play()
+          .then(() => {
+            audio.pause();
+            audio.currentTime = 0;
+            audio.volume = 1.0;
+          })
+          .catch(() => {
+            alert("🔇 소리 재생 권한이 필요해요.");
+          });
+
+        runCountdown();
+      }
+
+      function runCountdown() {
+        updateDisplay(remaining);
+        clearInterval(timer);
+        timer = setInterval(() => {
+          if (!isPaused) {
+            remaining--;
+            updateDisplay(remaining);
+            if (remaining <= 0) {
+              clearInterval(timer);
+              playSound();
+              document.getElementById("pauseBtn").disabled = true;
+              document.getElementById("stopBtn").disabled = true;
+              if (isWorking) {
+                showConfirmation("Work 끝! 쉬기?", () => {
+                  isWorking = false;
+                  document.getElementById("pauseBtn").disabled = false;
+                  document.getElementById("stopBtn").disabled = false;
+                  addLog("Rest 시작");
+                  remaining = restDuration;
+                  runCountdown();
+                });
+              } else {
+                count++;
+                updateCount();
+                showRestartOrStop();
+                showTaskInput(); // 🔥 작업 입력칸 표시
+              }
+            }
+          }
+        }, 1000);
+      }
+
+      function updateDisplay(seconds) {
+        document.getElementById("timer").textContent = formatTime(seconds);
+      }
+
+      function updateCount() {
+        document.getElementById("count").textContent = `Count: ${count}`;
+      }
+
+      function showConfirmation(message, callback) {
+        const controls = document.getElementById("controls");
+        controls.innerHTML = `<p>${message}</p><button onclick='handleConfirm()'>확인</button>`;
+        window.handleConfirm = () => {
+          controls.innerHTML = "";
+          callback();
+        };
+      }
+
+      function showRestartOrStop() {
+        const controls = document.getElementById("controls");
+        controls.innerHTML = `
+        <p>Rest 끝! 계속할까요?</p>
+        <button onclick='handleRestart()'>Restart</button>
+        <button onclick='handleStop()'>Stop</button>
+      `;
+      }
+
+      function handleRestart() {
+        isWorking = true;
+        isPaused = false;
+        document.getElementById("pauseBtn").textContent = "Pause";
+        document.getElementById("pauseBtn").disabled = false;
+        document.getElementById("stopBtn").disabled = false;
+        addLog("Work 시작");
+        remaining = workDuration;
+        document.getElementById("controls").innerHTML = "";
+        runCountdown();
+      }
+
+      function handleStop() {
+        clearInterval(timer);
+        document.getElementById("timer").textContent = "00:00:00";
+        document.getElementById("controls").innerHTML = `<p>Timer 중단됨.</p>`;
+        document.getElementById("pauseBtn").disabled = true;
+        document.getElementById("stopBtn").disabled = true;
+      }
+
+      function handleFullStop() {
+        clearInterval(timer);
+        document.getElementById("timer").textContent = "00:00:00";
+        document.getElementById("controls").innerHTML = "";
+        document.getElementById("pauseBtn").textContent = "Pause";
+        document.getElementById("pauseBtn").disabled = true;
+        document.getElementById("stopBtn").disabled = true;
+        isPaused = false;
+      }
+
+      function togglePause() {
+        isPaused = !isPaused;
+        document.getElementById("pauseBtn").textContent = isPaused
+          ? "Resume"
+          : "Pause";
+      }
+
+      function playSound() {
+        const sound = document.getElementById("alertSound");
+        sound.pause();
+        sound.currentTime = 0;
+        sound.play().catch(() => {
+          alert("🔇 소리 재생 실패. 화면을 클릭해 주세요.");
+        });
+      }
+
+      function addLog(text) {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        const logDiv = document.getElementById("log");
+        const entry = document.createElement("div");
+        entry.className = "log-entry";
+        entry.textContent = `✔ ${timeStr} - ${text}`;
+        logDiv.appendChild(entry);
+      }
+
+      function showTaskInput() {
+        const controls = document.getElementById("controls");
+        const inputId = "taskInput";
+        controls.innerHTML += `
+        <p>📌 무엇을 하셨나요?</p>
+        <input type="text" id="${inputId}" placeholder="작업 내용을 입력하세요">
+        <button onclick="saveTaskLog()">저장</button>
+      `;
+      }
+
+      function saveTaskLog() {
+        const input = document.getElementById("taskInput");
+        if (input && input.value.trim() !== "") {
+          addLog("📌 " + input.value.trim());
+          input.disabled = true;
+        }
+      }
+    </script>
+  </body>
+</html>
